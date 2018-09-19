@@ -39,7 +39,7 @@ class BillBoardCrawler(scrapy.Spider):
 
         # Generate end dates of each week
         for i in range(numOfWeeks):
-            basedate = basedate - datetime.timedelta(days=7);
+            basedate = basedate - datetime.timedelta(days=7)
             str_date = basedate.strftime('%Y-%m-%d')
             dateList.append(str_date)
         
