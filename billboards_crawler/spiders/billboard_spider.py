@@ -11,95 +11,106 @@ import scrapy
 import datetime
 import pandas as pd
 from bs4 import BeautifulSoup
+from datetime import date
+import os
+
 
 # create subclass of Scrapy Spider
 class BillBoardCrawler(scrapy.Spider):
-    
+
     # Name of the Spider
-    name="billboards"
-    
+    name = "billboards"
+
     # Give a time delay of 1.25s for each GET request
     custom_settings = {
-        'DOWNLOAD_DELAY' : '1.25' 
+        'DOWNLOAD_DELAY': '1.25'
     }
+
+    def __init__(self, nweeks=100, base_date=date.today(), timedelta=7, save_dir='./billboard_data', *args, **kwargs):
+        super(BillBoardCrawler, self).__init__(*args, **kwargs)
+        super().__init__(**kwargs)
+        self.nweeks = int(nweeks)
+        self.base_date = base_date
+        self.timedelta = timedelta
+        self.save_dir = save_dir
 
     # create start requests
     def start_requests(self):
-        
+
         # create base URL
         base_url = 'https://www.billboard.com/charts/hot-100/'
-        
+
         # Create starting date
-        basedate = datetime.datetime.strptime('2018-07-28','%Y-%m-%d')
-        
+        # basedate = datetime.datetime.strptime('2018-07-28', '%Y-%m-%d')
+        basedate = self.base_date
+
         dateList = []
         urlList = []
-        
-        numOfWeeks = 500
+
+        numOfWeeks = self.nweeks
 
         # Generate end dates of each week
         for i in range(numOfWeeks):
-            basedate = basedate - datetime.timedelta(days=7)
+            basedate = basedate - datetime.timedelta(days=self.timedelta)
             str_date = basedate.strftime('%Y-%m-%d')
             dateList.append(str_date)
-        
+
         # Append each date to base URL to generate unique URL List
         for date in dateList:
             url = base_url + date
             urlList.append(url)
-        
+
         # Make requests asynchronously, on callback reference the parse method
         for url in urlList:
             yield scrapy.Request(url=url, callback=self.parse)
-    
+
     # Method to parse incoming HTML data and convert to relevant CSV files
     def parse(self, response):
-        
+
         # Get HTML body from response
         page = response.body
-        
+
         # Use Beautiful Soup to parse HTML
         soup = BeautifulSoup(page, 'html.parser')
-        
-        # Initialize Lists for Song Names, Artist and Rank
-        nameList = []
-        artistList = []
-        rankList = ['1']
-        
-        # Get the First Ranked Song details 
-        oneName = soup.find('div', attrs={'class':'chart-number-one__title'})
-        oneArtist = soup.find('div', attrs={'class':'chart-number-one__artist'})
-        oneArtist = oneArtist.a.text if oneArtist.a != None else oneArtist.text
-        
-        nameList.append(oneName.text)
-        artistList.append(oneArtist.strip())
-        
-        # Get the song data
-        songs = soup.find_all('div', attrs={'class':'chart-list-item'})
-        for song in songs:
-            
-            songName = song['data-title']
-            artistName = song['data-artist']
-            rank = song['data-rank']
-            
-            nameList.append(songName)
-            artistList.append(artistName)
-            rankList.append(rank)
-        
-        # Generate Datasets for each week
-        songNameSr = pd.Series(nameList)
-        artistNameSr = pd.Series(artistList)
-        rankSr = pd.Series(rankList)
-        csvYear= response.url.split("/")[-1]
-        date = [csvYear]*100
-        dateSr = pd.Series(date)
-        
-        finalDF = pd.DataFrame(songNameSr, columns=['song'])
-        finalDF['artist'] = artistNameSr
-        finalDF['rank'] = rankSr
-        finalDF['week'] = dateSr
-        
-        # write to CSV file
-        filename = 'billboard-%s.csv' % csvYear
-        
-        finalDF.to_csv(filename)
+
+        song_name_tag = 'chart-element__information__song'
+        artist_name_tag = 'chart-element__information__artist'
+        default_tag = 'chart-element__information__delta__text text--default'
+        last_week_tag = 'chart-element__meta text--center color--secondary text--last'
+        peak_rank_tag = 'chart-element__meta text--center color--secondary text--peak'
+        week_chart_tag = 'chart-element__meta text--center color--secondary text--week'
+        # album_art_tag='chart-element__image flex--no-shrink'
+
+        song_names = [x.get_text()
+                      for x in soup.find_all('span', song_name_tag)]
+        artist_names = [x.get_text()
+                        for x in soup.find_all('span', artist_name_tag)]
+        default = [x.get_text()
+                   for x in soup.find_all('span', default_tag)]
+        last_week = [x.get_text()
+                     for x in soup.find_all('span', last_week_tag)]
+
+        peak_rank = [x.get_text()
+                     for x in soup.find_all('span', peak_rank_tag)]
+        week_chart = [x.get_text()
+                      for x in soup.find_all('span', week_chart_tag)]
+
+        # save to dataframe
+        df = pd.DataFrame()
+        df['rank'] = list(range(1, 101))
+        df['song_name'] = song_names
+        df['artist_name'] = artist_names
+        df['default'] = default
+        df['last_week'] = last_week
+        df['peak_rank'] = peak_rank
+        df['week_chart'] = week_chart
+
+        # create save directory
+        if not os.path.exists(self.save_dir):
+            os.makedirs(self.save_dir)
+
+        csvYear = response.url.split("/")[-1]
+        filename = os.path.join(self.save_dir, 'billboard-%s.csv' % csvYear)
+
+        # save to dir
+        df.to_csv(filename, index=False)
