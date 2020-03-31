@@ -23,7 +23,7 @@ class BillBoardCrawler(scrapy.Spider):
 
     # Give a time delay of 1.25s for each GET request
     custom_settings = {
-        'DOWNLOAD_DELAY': '1.25'
+        'DOWNLOAD_DELAY': '2'
     }
 
     def __init__(self, nweeks=100, base_date=date.today(), timedelta=7, save_dir='./billboard_data', *args, **kwargs):
